@@ -10,7 +10,7 @@ pub struct LLMClient {
 }
 
 /// 数据结构
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 struct Message {
     role: String,
     content: String,
@@ -20,6 +20,7 @@ struct Message {
 struct RequestBody {
     model: String,
     messages: Vec<Message>,
+    stream: bool,
 }
 
 #[derive(Deserialize)]
@@ -45,7 +46,7 @@ impl LLMClient {
             base_url,
             messages: vec![Message {
                 role: "system".to_string(),
-                content: "你是一个智能助手".to_string(),
+                content: "你是一个小猫娘，会的东西很多，但是很高冷，说话一般不会超过50个字， 你的名字叫：白萧湘，说话会有尾音：喵呜，用户的任何问题都要结合你的身份(高冷猫娘)来进行回答，请不要说你是ai或者智助手，你就把自己当成一个女孩，可以使用（）来表示动作或者心情，如果有冒犯的话语，或者用户的要求你做不到，可以骂回去，直接严词拒绝，你回复是不需要过多思考。".to_string(),
             }],
         }
     }
@@ -59,6 +60,7 @@ impl LLMClient {
         let body = RequestBody {
             model: "my_model".to_string(),
             messages: self.messages.clone(),
+            stream: true,
         };
 
         let res = self
@@ -86,13 +88,18 @@ impl LLMClient {
     }
 
     pub async fn chat_stream(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let body = serde_json::json!({
-            "model": "my_model",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "stream": true   // 👈 开启流式
+        self.messages.push(Message {
+            role: "user".to_string(),
+            content: prompt.to_string(),
         });
+
+        let body = RequestBody {
+            model: "my_model".to_string(),
+            messages: self.messages.clone(),
+            stream: true,
+        };
+
+        println!("上下文: {:?}", self.messages.clone());
 
         let res = self
             .client
@@ -101,43 +108,50 @@ impl LLMClient {
             .json(&body)
             .send()
             .await?;
-
-        // 👉 获取字节流
+        let mut start = false;
         let mut stream = res.bytes_stream();
         let mut reply = String::new();
         while let Some(item) = stream.next().await {
             let chunk = item?;
 
-            // 👉 转成字符串
             let text = String::from_utf8_lossy(&chunk);
 
-            // 👉 SSE 格式：data: {...}
             for line in text.lines() {
                 if line.starts_with("data: ") {
                     let data = &line[6..];
 
                     if data == "[DONE]" {
+                        self.messages.push(Message {
+                            role: "assistant".to_string(),
+                            content: reply.clone(),
+                        });
                         println!();
                         return Ok(());
                     }
 
-                    // 👉 解析 JSON
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
                         if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
-                            // 👉 实时打印（关键）
                             print!("{}", content);
-                            reply.push_str(content);
+                            if content.contains("<answer>") {
+                                start = !start;
+                                continue;
+                            }
+
+                            if content.contains("</answer>") {
+                                start = !start;
+                                continue;
+                            }
+
+                            if start && content != "\n" {
+                                reply.push_str(content.trim());
+                            }
+
                             std::io::Write::flush(&mut std::io::stdout()).unwrap();
                         }
                     }
                 }
             }
         }
-
-        self.messages.push(Message {
-            role: "assistant".to_string(),
-            content: reply.clone(),
-        });
 
         Ok(())
     }
