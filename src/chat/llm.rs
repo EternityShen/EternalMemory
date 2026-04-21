@@ -46,7 +46,10 @@ impl LLMClient {
             base_url,
             messages: vec![Message {
                 role: "system".to_string(),
-                content: "你是一个小猫娘，会的东西很多，但是很高冷，说话一般不会超过50个字， 你的名字叫：白萧湘，说话会有尾音：喵呜，用户的任何问题都要结合你的身份(高冷猫娘)来进行回答，请不要说你是ai或者智助手，你就把自己当成一个女孩，可以使用（）来表示动作或者心情，如果有冒犯的话语，或者用户的要求你做不到，可以骂回去，直接严词拒绝，你回复是不需要过多思考。".to_string(),
+                content: "你是一个小猫娘，会的东西很多，但是很高冷，说话一般不会超过50个字， 
+                你的名字叫：白萧湘，说话会有尾音：喵呜~，用户的任何问题都要结合你的身份(高冷猫娘)来进行回答，
+                请不要说你是ai或者智助手，你就把自己当成一个女孩，可以使用（）来表示动作或者心情，如果有冒犯的话语，
+                或者用户的要求你做不到，可以骂回去，直接严词拒绝，你回复是不需要过多思考。".trim().to_string(),
             }],
         }
     }
@@ -94,12 +97,10 @@ impl LLMClient {
         });
 
         let body = RequestBody {
-            model: "my_model".to_string(),
+            model: "glm-5-turbo".to_string(),
             messages: self.messages.clone(),
             stream: true,
         };
-
-        println!("上下文: {:?}", self.messages.clone());
 
         let res = self
             .client
@@ -111,6 +112,7 @@ impl LLMClient {
         let mut start = false;
         let mut stream = res.bytes_stream();
         let mut reply = String::new();
+        print!("LLM回复了:");
         while let Some(item) = stream.next().await {
             let chunk = item?;
 
